@@ -63,7 +63,7 @@ update() {
 			if [ -w "$0" ]; then
 				dialog --yesno "Newer version of ALSA-Info has been found\n\nDo you wish to install it?\nNOTICE: The original file $0 will be overwritten!" 0 0
 				DIALOG_EXIT_CODE=$?
-				[ "$DIALOG_EXIT_CODE" = 0 ] && OVERWRITE=yes
+				[ "$DIALOG_EXIT_CODE" = 0 ] && OVERWRITE="yes"
 			fi
 			if [ -z "$OVERWRITE" ]; then
 				dialog --yesno "Newer version of ALSA-Info has been found\n\nDo you wish to download it?" 0 0
@@ -174,59 +174,56 @@ withdevices() {
 } >> "$FILE"
 
 withconfigs() {
-	if [ -e "$HOME/.asoundrc" ] || [ -e /etc/asound.conf ] || [ -e "$HOME/.asoundrc.asoundconf" ]; then
-		echo "!!ALSA configuration files"
-		echo "!!------------------------"
-		echo ""
+	[ -e "$HOME/.asoundrc" ] || [ -e /etc/asound.conf ] || [ -e "$HOME/.asoundrc.asoundconf" ] || return
 
-		#Check for ~/.asoundrc
-		if [ -e "$HOME/.asoundrc" ]; then
-			echo "!!User specific config file (~/.asoundrc)"
-			echo ""
-			cat "$HOME/.asoundrc"
-			echo ""
-			echo ""
-		fi
-		#Check for .asoundrc.asoundconf (seems to be Ubuntu specific)
-		if [ -e "$HOME/.asoundrc.asoundconf" ]; then
-			echo "!!asoundconf-generated config file"
-			echo ""
-			cat "$HOME/.asoundrc.asoundconf"
-			echo ""
-			echo ""
-		fi
-		#Check for /etc/asound.conf
-		if [ -e /etc/asound.conf ]; then
-			echo "!!System wide config file (/etc/asound.conf)"
-			echo ""
-			cat /etc/asound.conf
-			echo ""
-			echo ""
-		fi
+	echo "!!ALSA configuration files"
+	echo "!!------------------------"
+	echo ""
+
+	#Check for ~/.asoundrc
+	if [ -e "$HOME/.asoundrc" ]; then
+		echo "!!User specific config file (~/.asoundrc)"
+		echo ""
+		cat "$HOME/.asoundrc"
+		echo ""
+		echo ""
+	fi
+
+	#Check for .asoundrc.asoundconf (seems to be Ubuntu specific)
+	if [ -e "$HOME/.asoundrc.asoundconf" ]; then
+		echo "!!asoundconf-generated config file"
+		echo ""
+		cat "$HOME/.asoundrc.asoundconf"
+		echo ""
+		echo ""
+	fi
+
+	#Check for /etc/asound.conf
+	if [ -e /etc/asound.conf ]; then
+		echo "!!System wide config file (/etc/asound.conf)"
+		echo ""
+		cat /etc/asound.conf
+		echo ""
+		echo ""
 	fi
 } >> "$FILE"
 
 withsysfs() {
 	printed=''
 
-	for i in /sys/class/sound/*; do
-	case "$i" in
-		*/hwC?D?)
-			if [ -f "$i/init_pin_configs" ]; then
-				if [ -z "$printed" ]; then
-					echo "!!Sysfs Files"
-					echo "!!-----------"
-					echo ""
-				fi
-				for f in init_pin_configs driver_pin_configs user_pin_configs init_verbs hints; do
-					echo "$i/$f:"
-					cat "$i/$f"
-					echo
-				done
-				printed=yes
-			fi
-			;;
-		esac
+	for i in /sys/class/sound/hwC?D?; do
+		[ -f "$i/init_pin_configs" ] || continue
+		if [ -z "$printed" ]; then
+			echo "!!Sysfs Files"
+			echo "!!-----------"
+			echo ""
+			printed="yes"
+		fi
+		for f in init_pin_configs driver_pin_configs user_pin_configs init_verbs hints; do
+			echo "$i/$f:"
+			cat "$i/$f"
+			echo
+		done
 	done
 	if [ -n "$printed" ]; then
 		echo ""
@@ -260,22 +257,8 @@ get_alsa_library_version() {
 	if [ -z "$ALSA_LIB_VERSION" ]; then
 		if [ -f /etc/lsb-release ]; then
 			. /etc/lsb-release
-			case "$DISTRIB_ID" in
-				Ubuntu)
-					if command -v dpkg > /dev/null ; then
-						ALSA_LIB_VERSION=$(dpkg -l libasound2 | sed -n '$s/[^[:space:]]*[[:space:]]*[^[:space:]]*[[:space:]]*\([^[:space:]]*\).*/\1/p')
-					fi
-
-					if [ "$ALSA_LIB_VERSION" = "<none>" ]; then
-						ALSA_LIB_VERSION=""
-					fi
-					return
-					;;
-				*)
-					return
-					;;
-			esac
-		elif [ -f /etc/debian_version ]; then
+		fi
+		if [ -f /etc/debian_version ] || [ "$DISTRIB_ID" = "Ubuntu" ]; then
 			if command -v dpkg >/dev/null ; then
 				ALSA_LIB_VERSION=$(dpkg -l libasound2 | sed -n '$s/[^[:space:]]*[[:space:]]*[^[:space:]]*[[:space:]]*\([^[:space:]]*\).*/\1/p')
 			fi
@@ -302,7 +285,7 @@ TPUT="$(command -v tput)"
 DIALOG="$(command -v dialog)"
 
 # Check to see if sysfs is enabled in the kernel. We'll need this later on
-SYSFS=$(mount | sed -n 's/^sysfs on \([^ ]*\) type.*/\1/p');
+SYSFS=$(mount | sed -n 's/^[^ ]* on \([^ ]*\) type sysfs.*/\1/p')
 
 # Check modprobe config files for sound related options
 SNDOPTIONS=$(modprobe -c | sed -n 's/^options \(snd[-_][^ ]*\)/\1:/p')
@@ -351,8 +334,7 @@ done
 
 
 #Script header output.
-if [ "$WELCOME" = "yes" ]; then
-	greeting_message="\
+greeting_message="\
 
 This script visits the following commands/files to collect diagnostic
 information about your ALSA installation and sound related hardware.
@@ -369,10 +351,9 @@ information about your ALSA installation and sound related hardware.
 
 See '$0 --help' for command line options.
 "
+if [ "$WELCOME" = "yes" ]; then
 	if [ -n "$DIALOG" ]; then
-		dialog  --backtitle "$BGTITLE" \
-			--title "ALSA-Info script v $SCRIPT_VERSION" \
-			--msgbox "$greeting_message" 20 80
+		dialog --backtitle "$BGTITLE" --title "ALSA-Info script v $SCRIPT_VERSION" --msgbox "$greeting_message" 20 80
 	else
 		echo "ALSA Information Script v $SCRIPT_VERSION"
 		echo "--------------------------------"
@@ -406,7 +387,7 @@ if [ "$PROCEED" = "yes" ]; then
 		*SMP*)  KERNEL_SMP="Yes";;
 		*)		KERNEL_SMP="No";;
 	esac
-	ALSA_DRIVER_VERSION=$(sed -n '0s/.* \([^ ]*\)\.$/\1/p' /proc/asound/version)
+	ALSA_DRIVER_VERSION=$(sed -n '1s/.* \([^ ]*\)\.$/\1/p' /proc/asound/version)
 	get_alsa_library_version
 	ALSA_UTILS_VERSION=$(amixer -v | sed 's/amixer version //')
 
@@ -420,12 +401,12 @@ if [ "$PROCEED" = "yes" ]; then
 	#Check for DMI data
 	if [ -d /sys/class/dmi/id ]; then
 		# No root privileges are required when using sysfs method
-		DMI_SYSTEM_MANUFACTURER=$(cat /sys/class/dmi/id/sys_vendor)
-		DMI_SYSTEM_PRODUCT_NAME=$(cat /sys/class/dmi/id/product_name)
-		DMI_SYSTEM_PRODUCT_VERSION=$(cat /sys/class/dmi/id/product_version)
-		DMI_SYSTEM_FIRMWARE_VERSION=$(cat /sys/class/dmi/id/bios_version)
-		DMI_BOARD_VENDOR=$(cat /sys/class/dmi/id/board_vendor)
-		DMI_BOARD_NAME=$(cat /sys/class/dmi/id/board_name)
+		read -r DMI_SYSTEM_MANUFACTURER < /sys/class/dmi/id/sys_vendor
+		read -r DMI_SYSTEM_PRODUCT_NAME < /sys/class/dmi/id/product_name
+		read -r DMI_SYSTEM_PRODUCT_VERSION < /sys/class/dmi/id/product_version
+		read -r DMI_SYSTEM_FIRMWARE_VERSION < /sys/class/dmi/id/bios_version
+		read -r DMI_BOARD_VENDOR < /sys/class/dmi/id/board_vendor
+		read -r DMI_BOARD_NAME < /sys/class/dmi/id/board_name
 	elif [ -x "$DMIDECODE" ]; then
 		DMI_SYSTEM_MANUFACTURER=$("$DMIDECODE" -s system-manufacturer)
 		DMI_SYSTEM_PRODUCT_NAME=$("$DMIDECODE" -s system-product-name)
@@ -440,17 +421,18 @@ if [ "$PROCEED" = "yes" ]; then
 		for f in /sys/bus/acpi/devices/*/status; do
 			read -r ACPI_STATUS < "$f"
 			if [ "$ACPI_STATUS" -ne 0 ]; then
-				printf '%s \t %s\n' "$f" "$ACPI_STATUS" >>"$TEMPDIR/acpidevicestatus.tmp"
+				printf '%s \t %s\n' "$f" "$ACPI_STATUS"
 			fi
-		done
+		done > "$TEMPDIR/acpidevicestatus.tmp"
 	fi
 
 	if [ -e /proc/asound/modules ]; then
 		while read -r _ mod; do
+			SNDMODULES="$SNDMODULES${SNDMODULES:+ }$mod"
 			echo "$mod"
 		done </proc/asound/modules >"$TEMPDIR/alsamodules.tmp"
 	else
-		echo > "$TEMPDIR/alsamodules.tmp"
+		printf '' > "$TEMPDIR/alsamodules.tmp"
 	fi
 	cat /proc/asound/cards > "$TEMPDIR/alsacards.tmp"
 	lspci | grep -i "multi\|audio" > "$TEMPDIR/lspci.tmp"
@@ -600,21 +582,19 @@ if [ "$PROCEED" = "yes" ]; then
 			echo ""
 		fi
 
-		if [ -d "$SYSFS" ]; then
+		if [ -d "$SYSFS" ] && [ -n "$SNDMODULES" ]; then
 			echo "!!Loaded sound module options"
 			echo "!!---------------------------"
 			echo ""
-			if [ -e /proc/asound/modules ]; then
-				while read -r _ mod; do
-					echo "!!Module: $mod"
-					for params in "$SYSFS/module/$mod/parameters/"*; do
-						printf '\t'
-						value=$(cat "$params")
-						echo "$params : $value" | sed 's:.*/::'
-					done
-					echo ""
-				done </proc/asound/modules
-			fi
+			for mod in $SNDMODULES; do
+				[ -d "$SYSFS/module/$mod/parameters/" ] || continue
+				echo "!!Module: $mod"
+				for f in "$SYSFS/module/$mod/parameters/"*; do
+					read -r value < "$f"
+					printf '\t%s : %s\n' "${f##*/}" "$value"
+				done
+				echo ""
+			done
 			echo ""
 		fi
 
@@ -712,32 +692,8 @@ while [ -n "$1" ]; do
 			WITHALL="no"
 			;;
 		--with-configs)
+			withconfigs
 			WITHALL="no"
-			if [ -e "$HOME/.asoundrc" ] || [ -e /etc/asound.conf ]; then
-				{
-					echo "!!ALSA configuration files"
-					echo "!!------------------------"
-					echo ""
-
-					#Check for ~/.asoundrc
-					if [ -e "$HOME/.asoundrc" ]; then
-						echo "!!User specific config file ($HOME/.asoundrc)"
-						echo ""
-						cat "$HOME/.asoundrc"
-						echo ""
-						echo ""
-					fi
-
-					#Check for /etc/asound.conf
-					if [ -e /etc/asound.conf ]; then
-						echo "!!System wide config file (/etc/asound.conf)"
-						echo ""
-						cat /etc/asound.conf
-						echo ""
-						echo ""
-					fi
-				} >> "$FILE"
-			fi
 			;;
 		--stdout)
 			UPLOAD="no"
@@ -877,7 +833,6 @@ if wget --help 2>&1 | grep -q post-file; then
 		fi
 
 		clear
-
 	else # no dialog
 		if [ -z "$PASTEBIN" ]; then
 			printf 'Uploading information to www.alsa-project.org ... '
@@ -903,28 +858,23 @@ if wget --help 2>&1 | grep -q post-file; then
 		echo ""
 	fi # dialog
 
+	if [ -z "$PASTEBIN" ]; then
+		FINAL_URL=$(grep "SUCCESS:" "$TEMPDIR/wget.tmp" | cut -d ' ' -f 2)
+	else
+		FINAL_URL=$(grep "SUCCESS:" "$TEMPDIR/wget.tmp" | sed -n 's/.*\:\([0-9]\+\).*/http:\/\/pastebin.ca\/\1/p')
+	fi
+
 	# See if tput is available, and use it if it is.
 	if [ -n "$TPUT" ]; then
-		if [ -z "$PASTEBIN" ]; then
-			FINAL_URL=$(tput setaf 1; grep "SUCCESS:" "$TEMPDIR/wget.tmp" | cut -d ' ' -f 2 ; tput sgr0)
-		else
-			FINAL_URL=$(tput setaf 1; grep "SUCCESS:" "$TEMPDIR/wget.tmp" | sed -n 's/.*\:\([0-9]\+\).*/http:\/\/pastebin.ca\/\1/p'; tput sgr0)
-		fi
-	else
-		if [ -z "$PASTEBIN" ]; then
-			FINAL_URL=$(grep "SUCCESS:" "$TEMPDIR/wget.tmp" | cut -d ' ' -f 2)
-		else
-			FINAL_URL=$(grep "SUCCESS:" "$TEMPDIR/wget.tmp" | sed -n 's/.*\:\([0-9]\+\).*/http:\/\/pastebin.ca\/\1/p')
-		fi
+		FINAL_URL=$(tput setaf 1; printf '%s' "$FINAL_URL"; tput sgr0)
 	fi
 
 	# Output the URL of the uploaded file.
 	echo "Your ALSA information is located at $FINAL_URL"
 	echo "Please inform the person helping you."
 	echo ""
-
-# We couldnt find a suitable wget, so tell the user to upload manually.
 else
+	# We couldn't find a suitable wget, so tell the user to upload manually.
 	mv -f "$FILE" "$NFILE" || exit 1
 	KEEP_OUTPUT="yes"
 	if [ -z "$DIALOG" ]; then
